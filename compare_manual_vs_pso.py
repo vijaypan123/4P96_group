@@ -13,6 +13,7 @@ import numpy as np
 import torch
 
 from pso import PSOOptimizer
+from render_study_report import render_reports_for_study
 from ssl_pipeline import run_pseudo_labeling_ssl
 
 
@@ -193,6 +194,7 @@ def run_manual_trial(args, labeled_ratio: float, seed: int, manual_configs: List
         "final_run_time_sec": final_time,
         "total_time_sec": tuning_time + final_time,
         "search_history": "",
+        "final_epoch_history": final_result["epoch_history"],
     }
 
 
@@ -250,7 +252,43 @@ def run_pso_trial(args, labeled_ratio: float, seed: int) -> Dict:
         "final_run_time_sec": final_time,
         "total_time_sec": tuning_time + final_time,
         "search_history": json.dumps(search_result["history"]),
+        "final_epoch_history": final_result["epoch_history"],
     }
+
+
+def flatten_epoch_history(
+    labeled_ratio: float,
+    trial: int,
+    seed: int,
+    method: str,
+    epoch_history: List[Dict]
+) -> List[Dict]:
+    rows = []
+    previous_val_acc = None
+
+    for epoch_row in epoch_history:
+        current_val_acc = epoch_row["val_acc"]
+        rows.append({
+            "labeled_ratio": labeled_ratio,
+            "trial": trial,
+            "seed": seed,
+            "method": method,
+            "round_idx": epoch_row["round_idx"],
+            "epoch_in_round": epoch_row["epoch_in_round"],
+            "global_epoch": epoch_row["global_epoch"],
+            "train_loss": round(epoch_row["train_loss"], 6),
+            "train_acc": round(epoch_row["train_acc"], 6),
+            "val_loss": round(epoch_row["val_loss"], 6),
+            "val_acc": round(current_val_acc, 6),
+            "val_f1": round(epoch_row["val_f1"], 6),
+            "val_acc_improvement": round(
+                current_val_acc - previous_val_acc if previous_val_acc is not None else 0.0,
+                6
+            ),
+        })
+        previous_val_acc = current_val_acc
+
+    return rows
 
 
 def summarize_by_method(rows: List[Dict]) -> List[Dict]:
@@ -315,7 +353,13 @@ def summarize_by_ratio(summary_rows: List[Dict]) -> List[Dict]:
     return comparison_rows
 
 
-def save_report_tables(output_dir: Path, detailed_rows: List[Dict], summary_rows: List[Dict], comparison_rows: List[Dict]) -> None:
+def save_report_tables(
+    output_dir: Path,
+    detailed_rows: List[Dict],
+    per_epoch_rows: List[Dict],
+    summary_rows: List[Dict],
+    comparison_rows: List[Dict]
+) -> None:
     detailed_columns = [
         "labeled_ratio",
         "trial",
@@ -333,8 +377,26 @@ def save_report_tables(output_dir: Path, detailed_rows: List[Dict], summary_rows
         "final_run_time_sec",
         "total_time_sec",
         "search_history",
+        "final_epoch_history",
     ]
     write_csv(output_dir / "detailed_results.csv", detailed_rows, detailed_columns)
+
+    per_epoch_columns = [
+        "labeled_ratio",
+        "trial",
+        "seed",
+        "method",
+        "round_idx",
+        "epoch_in_round",
+        "global_epoch",
+        "train_loss",
+        "train_acc",
+        "val_loss",
+        "val_acc",
+        "val_f1",
+        "val_acc_improvement",
+    ]
+    write_csv(output_dir / "per_epoch_results.csv", per_epoch_rows, per_epoch_columns)
 
     summary_columns = [
         "labeled_ratio",
@@ -403,7 +465,7 @@ def main():
     warnings.filterwarnings(
         "ignore",
         message=r"dtype\(\): align should be passed as Python or NumPy boolean",
-        category=DeprecationWarning
+        category=Warning
     )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -413,6 +475,7 @@ def main():
     save_study_config(args, output_dir, manual_configs)
 
     detailed_rows = []
+    per_epoch_rows = []
     total_trials = len(args.labeled_ratios) * args.trials
     completed = 0
 
@@ -426,12 +489,23 @@ def main():
             )
 
             manual_result = run_manual_trial(args, labeled_ratio, seed, manual_configs)
+            manual_epoch_history = manual_result.pop("final_epoch_history")
             detailed_rows.append({
                 "labeled_ratio": labeled_ratio,
                 "trial": trial_index + 1,
                 "seed": seed,
+                "final_epoch_history": json.dumps(manual_epoch_history),
                 **manual_result,
             })
+            per_epoch_rows.extend(
+                flatten_epoch_history(
+                    labeled_ratio=labeled_ratio,
+                    trial=trial_index + 1,
+                    seed=seed,
+                    method="manual",
+                    epoch_history=manual_epoch_history
+                )
+            )
             print(
                 f"  manual -> test_acc={manual_result['final_test_acc']:.4f}, "
                 f"test_f1={manual_result['final_test_f1']:.4f}, "
@@ -439,12 +513,23 @@ def main():
             )
 
             pso_result = run_pso_trial(args, labeled_ratio, seed)
+            pso_epoch_history = pso_result.pop("final_epoch_history")
             detailed_rows.append({
                 "labeled_ratio": labeled_ratio,
                 "trial": trial_index + 1,
                 "seed": seed,
+                "final_epoch_history": json.dumps(pso_epoch_history),
                 **pso_result,
             })
+            per_epoch_rows.extend(
+                flatten_epoch_history(
+                    labeled_ratio=labeled_ratio,
+                    trial=trial_index + 1,
+                    seed=seed,
+                    method="pso",
+                    epoch_history=pso_epoch_history
+                )
+            )
             print(
                 f"  pso    -> test_acc={pso_result['final_test_acc']:.4f}, "
                 f"test_f1={pso_result['final_test_f1']:.4f}, "
@@ -453,15 +538,19 @@ def main():
 
             summary_rows = summarize_by_method(detailed_rows)
             comparison_rows = summarize_by_ratio(summary_rows)
-            save_report_tables(output_dir, detailed_rows, summary_rows, comparison_rows)
+            save_report_tables(output_dir, detailed_rows, per_epoch_rows, summary_rows, comparison_rows)
 
     summary_rows = summarize_by_method(detailed_rows)
     comparison_rows = summarize_by_ratio(summary_rows)
-    save_report_tables(output_dir, detailed_rows, summary_rows, comparison_rows)
+    save_report_tables(output_dir, detailed_rows, per_epoch_rows, summary_rows, comparison_rows)
 
+    rendered_paths = render_reports_for_study(output_dir)
     print(f"\nSaved study outputs to: {output_dir.resolve()}")
     print(f"Detailed results: {(output_dir / 'detailed_results.csv').resolve()}")
     print(f"Summary tables  : {(output_dir / 'report_tables.md').resolve()}")
+    print("Matplotlib reports:")
+    for path in rendered_paths:
+        print(path)
 
 
 if __name__ == "__main__":

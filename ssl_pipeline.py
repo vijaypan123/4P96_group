@@ -171,7 +171,9 @@ def train_for_epochs_weighted(
     device,
     num_epochs=5,
     lr=0.001,
-    verbose: bool = True
+    verbose: bool = True,
+    round_idx: int = 1,
+    global_epoch_start: int = 0
 ):
     """
     Train for a few epochs using weighted pseudo-label loss.
@@ -180,6 +182,7 @@ def train_for_epochs_weighted(
 
     best_val_acc = 0.0
     best_state = copy.deepcopy(model.state_dict())
+    epoch_history = []
 
     for epoch in range(1, num_epochs + 1):
         train_loss, train_acc = train_one_epoch_weighted(
@@ -202,8 +205,19 @@ def train_for_epochs_weighted(
             best_val_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
 
+        epoch_history.append({
+            "round_idx": round_idx,
+            "epoch_in_round": epoch,
+            "global_epoch": global_epoch_start + epoch,
+            "train_loss": train_loss,
+            "train_acc": train_acc,
+            "val_loss": val_loss,
+            "val_acc": val_acc,
+            "val_f1": val_f1
+        })
+
     model.load_state_dict(best_state)
-    return best_val_acc
+    return best_val_acc, epoch_history
 
 
 def generate_pseudo_labels(
@@ -325,6 +339,8 @@ def run_pseudo_labeling_ssl(
 
     all_pseudo_indices = []
     all_pseudo_labels = {}
+    overall_epoch_history = []
+    global_epoch_count = 0
 
     best_overall_val_acc = 0.0
     best_overall_state = copy.deepcopy(model.state_dict())
@@ -350,15 +366,19 @@ def run_pseudo_labeling_ssl(
             print(f"  Remaining unlabeled     : {len(remaining_unlabeled_indices)}")
             print(f"  Pseudo weight           : {pseudo_weight:.3f}")
 
-        train_for_epochs_weighted(
+        _, round_epoch_history = train_for_epochs_weighted(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
             device=device,
             num_epochs=epochs_per_round,
             lr=learning_rate,
-            verbose=verbose
+            verbose=verbose,
+            round_idx=round_idx,
+            global_epoch_start=global_epoch_count
         )
+        overall_epoch_history.extend(round_epoch_history)
+        global_epoch_count += len(round_epoch_history)
 
         _, current_val_acc, current_val_f1 = evaluate_model(model, val_loader, device)
 
@@ -432,7 +452,8 @@ def run_pseudo_labeling_ssl(
         "test_acc": test_acc,
         "test_f1": test_f1,
         "total_pseudo_labeled": len(all_pseudo_indices),
-        "best_model_path": "best_ssl_cnn.pt" if save_model else None
+        "best_model_path": "best_ssl_cnn.pt" if save_model else None,
+        "epoch_history": overall_epoch_history
     }
 
 
