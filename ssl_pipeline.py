@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-from data import get_dataloaders, CIFAR10SubsetWithOptionalLabels
+from data import build_dataloader, get_dataloaders, CIFAR10SubsetWithOptionalLabels
 from model import SimpleCNN
 
 
@@ -95,20 +95,24 @@ def train_one_epoch_weighted(model, dataloader, optimizer, device):
     total_samples = 0
 
     criterion = nn.CrossEntropyLoss(reduction="none")
+    use_amp = device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     for images, labels, weights in dataloader:
-        images = images.to(device)
-        labels = labels.to(device)
-        weights = weights.to(device)
+        images = images.to(device, non_blocking=use_amp)
+        labels = labels.to(device, non_blocking=use_amp)
+        weights = weights.to(device, non_blocking=use_amp)
 
         optimizer.zero_grad()
 
-        outputs = model(images)
-        per_sample_loss = criterion(outputs, labels)
-        loss = (per_sample_loss * weights).mean()
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            outputs = model(images)
+            per_sample_loss = criterion(outputs, labels)
+            loss = (per_sample_loss * weights).mean()
 
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         total_loss += loss.item() * images.size(0)
 
@@ -136,11 +140,13 @@ def evaluate_model(model, dataloader, device):
 
     with torch.no_grad():
         for images, labels in dataloader:
-            images = images.to(device)
-            labels = labels.to(device)
+            use_amp = device.type == "cuda"
+            images = images.to(device, non_blocking=use_amp)
+            labels = labels.to(device, non_blocking=use_amp)
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                outputs = model(images)
+                loss = criterion(outputs, labels)
 
             total_loss += loss.item() * images.size(0)
 
@@ -164,7 +170,8 @@ def train_for_epochs_weighted(
     val_loader,
     device,
     num_epochs=5,
-    lr=0.001
+    lr=0.001,
+    verbose: bool = True
 ):
     """
     Train for a few epochs using weighted pseudo-label loss.
@@ -184,11 +191,12 @@ def train_for_epochs_weighted(
 
         val_loss, val_acc, val_f1 = evaluate_model(model, val_loader, device)
 
-        print(
-            f"    Epoch [{epoch}/{num_epochs}] | "
-            f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-            f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | Val Macro F1: {val_f1:.4f}"
-        )
+        if verbose:
+            print(
+                f"    Epoch [{epoch}/{num_epochs}] | "
+                f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+                f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | Val Macro F1: {val_f1:.4f}"
+            )
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -291,6 +299,9 @@ def run_pseudo_labeling_ssl(
         "cpu"
     )
 
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+
     if verbose:
         print(f"Using device: {device}")
 
@@ -345,7 +356,8 @@ def run_pseudo_labeling_ssl(
             val_loader=val_loader,
             device=device,
             num_epochs=epochs_per_round,
-            lr=learning_rate
+            lr=learning_rate,
+            verbose=verbose
         )
 
         _, current_val_acc, current_val_f1 = evaluate_model(model, val_loader, device)
@@ -368,7 +380,7 @@ def run_pseudo_labeling_ssl(
             indices=remaining_unlabeled_indices
         )
 
-        current_unlabeled_loader = DataLoader(
+        current_unlabeled_loader = build_dataloader(
             current_unlabeled_dataset,
             batch_size=batch_size,
             shuffle=False,

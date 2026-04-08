@@ -1,6 +1,6 @@
 import random
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -28,7 +28,9 @@ class PSOOptimizer:
         w: float = 0.7,
         c1: float = 1.5,
         c2: float = 1.5,
-        seed: int = 42
+        seed: int = 42,
+        ssl_kwargs: Optional[Dict] = None,
+        verbose: bool = True
     ):
         self.swarm_size = swarm_size
         self.max_iters = max_iters
@@ -36,9 +38,26 @@ class PSOOptimizer:
         self.c1 = c1
         self.c2 = c2
         self.seed = seed
+        self.verbose = verbose
 
         random.seed(seed)
         np.random.seed(seed)
+
+        self.ssl_kwargs = {
+            "data_dir": "./data",
+            "batch_size": 64,
+            "val_ratio": 0.1,
+            "labeled_ratio": 0.1,
+            "seed": seed,
+            "num_workers": 2,
+            "ssl_rounds": 2,
+            "epochs_per_round": 3,
+            "learning_rate": 0.001,
+            "save_model": False,
+            "verbose": False
+        }
+        if ssl_kwargs is not None:
+            self.ssl_kwargs.update(ssl_kwargs)
 
         # Search bounds
         self.threshold_bounds = (0.90, 0.99)
@@ -86,36 +105,34 @@ class PSOOptimizer:
     def evaluate_fitness(self, position: List[float]) -> float:
         threshold, max_pseudo, pseudo_weight = self.decode_position(position)
 
-        print("\nEvaluating particle with:")
-        print(f"  threshold     = {threshold:.4f}")
-        print(f"  max_pseudo    = {max_pseudo}")
-        print(f"  pseudo_weight = {pseudo_weight:.4f}")
+        if self.verbose:
+            print("\nEvaluating particle with:")
+            print(f"  threshold     = {threshold:.4f}")
+            print(f"  max_pseudo    = {max_pseudo}")
+            print(f"  pseudo_weight = {pseudo_weight:.4f}")
 
-        results = run_pseudo_labeling_ssl(
-            data_dir="./data",
-            batch_size=64,
-            val_ratio=0.1,
-            labeled_ratio=0.1,
-            seed=42,
-            num_workers=2,
-            threshold=threshold,
-            max_pseudo_labels_per_round=max_pseudo,
-            pseudo_weight=pseudo_weight,
-            ssl_rounds=2,          # lighter for PSO search
-            epochs_per_round=3,    # lighter for PSO search
-            learning_rate=0.001,
-            save_model=False,
-            verbose=False
-        )
+        ssl_run_kwargs = dict(self.ssl_kwargs)
+        ssl_run_kwargs.update({
+            "threshold": threshold,
+            "max_pseudo_labels_per_round": max_pseudo,
+            "pseudo_weight": pseudo_weight
+        })
+
+        results = run_pseudo_labeling_ssl(**ssl_run_kwargs)
 
         fitness = results["best_val_acc"]
-        print(f"  fitness (val acc) = {fitness:.4f}")
+        if self.verbose:
+            print(f"  fitness (val acc) = {fitness:.4f}")
 
         return fitness
 
     def initialize_swarm(self):
-        print("Initializing swarm...")
+        if self.verbose:
+            print("Initializing swarm...")
         self.swarm = []
+        self.global_best_position = None
+        self.global_best_fitness = float("-inf")
+        self.history = []
 
         for i in range(self.swarm_size):
             particle = self.initialize_particle()
@@ -130,7 +147,8 @@ class PSOOptimizer:
 
             self.swarm.append(particle)
 
-            print(f"Initialized particle {i+1}/{self.swarm_size}")
+            if self.verbose:
+                print(f"Initialized particle {i+1}/{self.swarm_size}")
 
         self.history.append(self.global_best_fitness)
 
@@ -138,7 +156,8 @@ class PSOOptimizer:
         self.initialize_swarm()
 
         for iteration in range(1, self.max_iters + 1):
-            print(f"\n========== PSO Iteration {iteration}/{self.max_iters} ==========")
+            if self.verbose:
+                print(f"\n========== PSO Iteration {iteration}/{self.max_iters} ==========")
 
             for i, particle in enumerate(self.swarm):
                 new_velocity = []
@@ -170,11 +189,12 @@ class PSOOptimizer:
                     self.global_best_fitness = fitness
                     self.global_best_position = particle.position.copy()
 
-                print(
-                    f"Particle {i+1}: "
-                    f"best_fitness={particle.best_fitness:.4f}, "
-                    f"global_best={self.global_best_fitness:.4f}"
-                )
+                if self.verbose:
+                    print(
+                        f"Particle {i+1}: "
+                        f"best_fitness={particle.best_fitness:.4f}, "
+                        f"global_best={self.global_best_fitness:.4f}"
+                    )
 
             self.history.append(self.global_best_fitness)
 

@@ -47,11 +47,13 @@ def evaluate_model(model, dataloader, criterion, device):
 
     with torch.no_grad():
         for images, labels in dataloader:
-            images = images.to(device)
-            labels = labels.to(device)
+            use_amp = device.type == "cuda"
+            images = images.to(device, non_blocking=use_amp)
+            labels = labels.to(device, non_blocking=use_amp)
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                outputs = model(images)
+                loss = criterion(outputs, labels)
 
             total_loss += loss.item() * images.size(0)
 
@@ -79,17 +81,21 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
     total_loss = 0.0
     total_correct = 0
     total_samples = 0
+    use_amp = device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     for images, labels in dataloader:
-        images = images.to(device)
-        labels = labels.to(device)
+        images = images.to(device, non_blocking=use_amp)
+        labels = labels.to(device, non_blocking=use_amp)
 
         optimizer.zero_grad()
 
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         total_loss += loss.item() * images.size(0)
 
@@ -119,6 +125,8 @@ def main():
         "cuda" if torch.cuda.is_available() else
         "cpu"
     )
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
     print(f"Using device: {device}")
 
     data = get_dataloaders(

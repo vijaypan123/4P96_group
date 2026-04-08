@@ -6,6 +6,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import datasets, transforms
 
+_DATASET_CACHE = {}
+
 
 class CIFAR10SubsetWithOptionalLabels(Dataset):
     """
@@ -67,6 +69,10 @@ def load_cifar10(data_dir: str = "./data"):
     """
     Load CIFAR-10 train and test datasets.
     """
+    cache_key = str(data_dir)
+    if cache_key in _DATASET_CACHE:
+        return _DATASET_CACHE[cache_key]
+
     train_transform, test_transform = get_cifar10_transforms()
 
     train_dataset = datasets.CIFAR10(
@@ -83,7 +89,23 @@ def load_cifar10(data_dir: str = "./data"):
         transform=test_transform
     )
 
+    _DATASET_CACHE[cache_key] = (train_dataset, test_dataset)
     return train_dataset, test_dataset
+
+
+def build_dataloader(dataset, batch_size: int, shuffle: bool, num_workers: int):
+    use_cuda = torch.cuda.is_available()
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "num_workers": num_workers,
+        "pin_memory": use_cuda
+    }
+
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+
+    return DataLoader(dataset, **loader_kwargs)
 
 
 def stratified_train_val_split(
@@ -223,28 +245,28 @@ def get_dataloaders(
         seed=seed
     )
 
-    labeled_loader = DataLoader(
+    labeled_loader = build_dataloader(
         ssl_split["labeled_dataset"],
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers
     )
 
-    unlabeled_loader = DataLoader(
+    unlabeled_loader = build_dataloader(
         ssl_split["unlabeled_dataset"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers
     )
 
-    val_loader = DataLoader(
+    val_loader = build_dataloader(
         ssl_split["val_dataset"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers
     )
 
-    test_loader = DataLoader(
+    test_loader = build_dataloader(
         test_dataset,
         batch_size=batch_size,
         shuffle=False,

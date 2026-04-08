@@ -13,3 +13,12 @@ __pycache__/
 
 # Jupyter checkpoints (if any)
 .ipynb_checkpoints/
+
+# Local environments
+.venv/
+
+# Generated experiment outputs
+smoke_outputs/
+smoke_outputs_speed/
+study_outputs/
+study_outputs_colab/
