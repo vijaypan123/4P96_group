@@ -1,0 +1,97 @@
+\documentclass[journal]{IEEEtran}
+\ifCLASSINFOpdf
+\else
+\fi
+\hyphenation{op-tical net-works semi-conduc-tor}
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+\begin{document}
+\title{COSC 4P96 Group Project: PSO-Optimized Pseudo-Labeling for Semi-Supervised Image Classification}
+
+\author{{Vijay~Panchal (7225949), Manu~Saini ()}
+}
+\maketitle
+\begin{abstract}
+Semi-supervised learning via pseudo-labeling \cite{lee2013pseudolabel} can
+substantially reduce the need for labeled data, yet its effectiveness is
+sensitive to hyperparameters such as the confidence threshold, pseudo-label
+budget, and pseudo-label weight. This paper investigates whether Particle
+Swarm Optimization (PSO) \cite{kennedy1995pso} can automatically discover
+hyperparameter configurations that outperform carefully designed manual
+strategies for a weighted pseudo-labeling pipeline on CIFAR-10. We train a
+lightweight CNN under six labeled-data fractions (5\%--50\%), comparing six
+expert-crafted manual strategies against a PSO-based search over a
+four-dimensional hyperparameter space, each evaluated across five random
+seeds. Our results show that well-chosen manual strategies achieve
+competitive or marginally higher test accuracy than PSO across all labeling
+regimes, with the gap narrowing as labeled data increases. However, manual
+tuning requires domain expertise to design effective strategies, whereas PSO
+reaches comparable performance without prior knowledge at roughly twice the
+computational cost. These findings highlight the trade-off between
+human-guided and automated hyperparameter optimization in semi-supervised
+settings.
+\end{abstract}
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+
+\subsection{Semi-Supervised Learning and Pseudo-Labeling}
+
+\subsection{Hyperparameter Sensitivity in SSL Pipelines}
+
+\subsection{Particle Swarm Optimization for Hyperparameter Tuning}
+
+\subsection{Project Objective}
+
+\section{Experiment Setup}
+
+\subsection{Dataset and Stratified Data Splitting}
+
+\subsection{CNN Architecture}
+
+\subsection{Weighted Pseudo-Labeling Pipeline}
+
+\subsection{Manual Hyperparameter Strategies}
+
+\subsection{PSO-Based Hyperparameter Search}
+
+\subsection{Evaluation Protocol}
+
+\subsubsection{Labeled Data Fractions}
+
+\subsubsection{Multi-Trial Seeding}
+
+\subsubsection{Tuning vs.\ Final Training Phases}
+
+\subsubsection{Metrics}
+
+\section{Results and Observations}
+
+\subsection{Supervised Baseline Performance}
+
+\subsection{Manual vs.\ PSO: Test Accuracy Comparison}
+
+\subsection{Manual vs.\ PSO: Macro F1 Comparison}
+
+\subsection{Convergence Analysis Across Labeled Ratios}
+
+\subsection{Effect of Labeled Data Fraction on SSL Gains}
+
+\subsection{Computational Cost: Manual vs.\ PSO}
+
+\subsection{Overall Observations}
+
+\section{Discussion}
+
+\section{Conclusion and Future Work}
+
+\subsection{Future Work}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+
+\end{document}
+
+
