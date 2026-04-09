@@ -1,0 +1,7 @@
+# Broadest pseudo-labeling strategy in the manual baseline set.
+name=Expansion First
+description=Lower threshold and very high pseudo-label volume with a faster optimizer step.
+threshold=0.90
+max_pseudo_labels_per_round=1500
+pseudo_weight=0.80
+learning_rate=0.0015

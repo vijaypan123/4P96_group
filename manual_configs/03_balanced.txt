@@ -1,0 +1,7 @@
+# Middle-of-the-road baseline.
+name=Balanced
+description=Moderate threshold, pseudo-label count, and pseudo-label trust.
+threshold=0.95
+max_pseudo_labels_per_round=500
+pseudo_weight=0.75
+learning_rate=0.0010

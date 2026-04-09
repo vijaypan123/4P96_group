@@ -1,0 +1,7 @@
+# Uses pseudo-labels more confidently once accepted.
+name=Aggressive Trust
+description=Moderate threshold paired with strong pseudo-label weighting.
+threshold=0.94
+max_pseudo_labels_per_round=900
+pseudo_weight=1.00
+learning_rate=0.0008

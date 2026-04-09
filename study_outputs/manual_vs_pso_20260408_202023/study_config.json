@@ -1,0 +1,91 @@
+{
+  "created_at": "2026-04-08T20:20:23",
+  "torch_version": "2.6.0+cu126",
+  "cuda_available": true,
+  "device_name": "NVIDIA GeForce RTX 3070",
+  "manual_candidate_configs": [
+    {
+      "name": "Cautious",
+      "description": "Very high confidence threshold with limited pseudo-label usage.",
+      "threshold": 0.99,
+      "max_pseudo_labels_per_round": 200,
+      "pseudo_weight": 0.25,
+      "learning_rate": 0.0005,
+      "source_file": "01_cautious.txt"
+    },
+    {
+      "name": "Precision First",
+      "description": "High threshold with moderate pseudo-label count and cautious learning rate.",
+      "threshold": 0.98,
+      "max_pseudo_labels_per_round": 400,
+      "pseudo_weight": 0.5,
+      "learning_rate": 0.0007,
+      "source_file": "02_precision_first.txt"
+    },
+    {
+      "name": "Balanced",
+      "description": "Moderate threshold, pseudo-label count, and pseudo-label trust.",
+      "threshold": 0.95,
+      "max_pseudo_labels_per_round": 500,
+      "pseudo_weight": 0.75,
+      "learning_rate": 0.001,
+      "source_file": "03_balanced.txt"
+    },
+    {
+      "name": "Aggressive Volume",
+      "description": "Lower threshold and large pseudo-label batches to expand training data quickly.",
+      "threshold": 0.92,
+      "max_pseudo_labels_per_round": 1200,
+      "pseudo_weight": 0.6,
+      "learning_rate": 0.0012,
+      "source_file": "04_aggressive_volume.txt"
+    },
+    {
+      "name": "Aggressive Trust",
+      "description": "Moderate threshold paired with strong pseudo-label weighting.",
+      "threshold": 0.94,
+      "max_pseudo_labels_per_round": 900,
+      "pseudo_weight": 1.0,
+      "learning_rate": 0.0008,
+      "source_file": "05_aggressive_trust.txt"
+    },
+    {
+      "name": "Expansion First",
+      "description": "Lower threshold and very high pseudo-label volume with a faster optimizer step.",
+      "threshold": 0.9,
+      "max_pseudo_labels_per_round": 1500,
+      "pseudo_weight": 0.8,
+      "learning_rate": 0.0015,
+      "source_file": "06_expansion_first.txt"
+    }
+  ],
+  "args": {
+    "data_dir": "./data",
+    "labeled_ratios": [
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.3,
+      0.5
+    ],
+    "trials": 5,
+    "base_seed": 42,
+    "batch_size": 64,
+    "val_ratio": 0.1,
+    "num_workers": 0,
+    "learning_rate": 0.001,
+    "tuning_ssl_rounds": 2,
+    "tuning_epochs_per_round": 3,
+    "final_ssl_rounds": 3,
+    "final_epochs_per_round": 4,
+    "pso_swarm_size": 3,
+    "pso_iters": 3,
+    "pso_w": 0.7,
+    "pso_c1": 1.5,
+    "pso_c2": 1.5,
+    "max_manual_candidates": null,
+    "manual_config_dir": "manual_configs",
+    "output_root": "study_outputs"
+  }
+}

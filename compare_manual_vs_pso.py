@@ -17,16 +17,6 @@ from render_study_report import render_reports_for_study
 from ssl_pipeline import run_pseudo_labeling_ssl
 
 
-# These represent a small set of hand-picked settings a person might try manually.
-MANUAL_CANDIDATE_CONFIGS: List[Dict[str, float]] = [
-    {"threshold": 0.93, "max_pseudo_labels_per_round": 300, "pseudo_weight": 0.50},
-    {"threshold": 0.95, "max_pseudo_labels_per_round": 500, "pseudo_weight": 0.75},
-    {"threshold": 0.97, "max_pseudo_labels_per_round": 500, "pseudo_weight": 1.00},
-    {"threshold": 0.95, "max_pseudo_labels_per_round": 1000, "pseudo_weight": 0.50},
-    {"threshold": 0.98, "max_pseudo_labels_per_round": 300, "pseudo_weight": 1.00},
-]
-
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Compare manual hyperparameter tuning against PSO for the SSL pipeline."
@@ -36,7 +26,7 @@ def parse_args():
         "--labeled-ratios",
         nargs="+",
         type=float,
-        default=[0.1, 0.2, 0.3, 0.4, 0.5],
+        default=[0.05, 0.10, 0.15, 0.20, 0.30, 0.50],
         help="Labeled-data fractions to evaluate."
     )
     parser.add_argument("--trials", type=int, default=5, help="Number of random seeds per ratio.")
@@ -61,6 +51,11 @@ def parse_args():
         help="Limit the number of manual candidate settings, mainly for faster smoke tests."
     )
     parser.add_argument(
+        "--manual-config-dir",
+        default="manual_configs",
+        help="Directory containing one text file per manual strategy."
+    )
+    parser.add_argument(
         "--output-root",
         default="study_outputs",
         help="Parent directory where the report tables will be written."
@@ -74,6 +69,41 @@ def get_device_name() -> str:
     if torch.backends.mps.is_available():
         return "Apple MPS"
     return "CPU"
+
+
+def parse_manual_config_file(path: Path) -> Dict:
+    config = {}
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if key in {"name", "description"}:
+            config[key] = value
+        elif key == "max_pseudo_labels_per_round":
+            config[key] = int(value)
+        else:
+            config[key] = float(value)
+
+    config["source_file"] = path.name
+    if "name" not in config:
+        config["name"] = path.stem
+    return config
+
+
+def load_manual_configs(config_dir: Path, max_candidates: int = None) -> List[Dict]:
+    config_paths = sorted(config_dir.glob("*.txt"))
+    configs = [parse_manual_config_file(path) for path in config_paths]
+
+    if max_candidates is not None:
+        configs = configs[:max_candidates]
+
+    return configs
 
 
 def mean_or_zero(values: Iterable[float]) -> float:
@@ -136,8 +166,10 @@ def pick_best_manual_config(args, labeled_ratio: float, seed: int, manual_config
     best_record = None
 
     for index, config in enumerate(manual_configs, start=1):
+        run_kwargs = dict(tuning_kwargs)
+        run_kwargs["learning_rate"] = config["learning_rate"]
         result = run_pseudo_labeling_ssl(
-            **tuning_kwargs,
+            **run_kwargs,
             threshold=config["threshold"],
             max_pseudo_labels_per_round=config["max_pseudo_labels_per_round"],
             pseudo_weight=config["pseudo_weight"]
@@ -170,6 +202,7 @@ def run_manual_trial(args, labeled_ratio: float, seed: int, manual_configs: List
         ssl_rounds=args.final_ssl_rounds,
         epochs_per_round=args.final_epochs_per_round
     )
+    final_kwargs["learning_rate"] = best_manual["config"]["learning_rate"]
 
     final_start = time.perf_counter()
     final_result = run_pseudo_labeling_ssl(
@@ -182,9 +215,11 @@ def run_manual_trial(args, labeled_ratio: float, seed: int, manual_configs: List
 
     return {
         "method": "manual",
+        "selected_strategy": best_manual["config"]["name"],
         "selected_threshold": best_manual["config"]["threshold"],
         "selected_max_pseudo": best_manual["config"]["max_pseudo_labels_per_round"],
         "selected_pseudo_weight": best_manual["config"]["pseudo_weight"],
+        "selected_learning_rate": best_manual["config"]["learning_rate"],
         "tuning_best_val_acc": best_manual["best_val_acc"],
         "final_best_val_acc": final_result["best_val_acc"],
         "final_test_acc": final_result["test_acc"],
@@ -228,6 +263,7 @@ def run_pso_trial(args, labeled_ratio: float, seed: int) -> Dict:
         ssl_rounds=args.final_ssl_rounds,
         epochs_per_round=args.final_epochs_per_round
     )
+    final_kwargs["learning_rate"] = search_result["best_learning_rate"]
 
     final_start = time.perf_counter()
     final_result = run_pseudo_labeling_ssl(
@@ -240,9 +276,11 @@ def run_pso_trial(args, labeled_ratio: float, seed: int) -> Dict:
 
     return {
         "method": "pso",
+        "selected_strategy": "pso_search",
         "selected_threshold": search_result["best_threshold"],
         "selected_max_pseudo": search_result["best_max_pseudo"],
         "selected_pseudo_weight": search_result["best_pseudo_weight"],
+        "selected_learning_rate": search_result["best_learning_rate"],
         "tuning_best_val_acc": search_result["best_fitness"],
         "final_best_val_acc": final_result["best_val_acc"],
         "final_test_acc": final_result["test_acc"],
@@ -365,9 +403,11 @@ def save_report_tables(
         "trial",
         "seed",
         "method",
+        "selected_strategy",
         "selected_threshold",
         "selected_max_pseudo",
         "selected_pseudo_weight",
+        "selected_learning_rate",
         "tuning_best_val_acc",
         "final_best_val_acc",
         "final_test_acc",
@@ -455,7 +495,10 @@ def save_study_config(args, output_dir: Path, manual_configs: List[Dict]) -> Non
 
 def main():
     args = parse_args()
-    manual_configs = MANUAL_CANDIDATE_CONFIGS[:args.max_manual_candidates]
+    manual_configs = load_manual_configs(
+        config_dir=Path(args.manual_config_dir),
+        max_candidates=args.max_manual_candidates
+    )
     if not manual_configs:
         raise ValueError("At least one manual candidate configuration is required.")
 

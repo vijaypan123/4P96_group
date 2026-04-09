@@ -1,0 +1,7 @@
+# Conservative but less extreme than the cautious strategy.
+name=Precision First
+description=High threshold with moderate pseudo-label count and cautious learning rate.
+threshold=0.98
+max_pseudo_labels_per_round=400
+pseudo_weight=0.50
+learning_rate=0.0007

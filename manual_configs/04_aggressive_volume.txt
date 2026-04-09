@@ -1,0 +1,7 @@
+# Adds many pseudo-labels while keeping their influence moderate.
+name=Aggressive Volume
+description=Lower threshold and large pseudo-label batches to expand training data quickly.
+threshold=0.92
+max_pseudo_labels_per_round=1200
+pseudo_weight=0.60
+learning_rate=0.0012

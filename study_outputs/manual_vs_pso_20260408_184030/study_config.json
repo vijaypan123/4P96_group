@@ -1,0 +1,50 @@
+{
+  "created_at": "2026-04-08T18:40:30",
+  "torch_version": "2.6.0+cu126",
+  "cuda_available": true,
+  "device_name": "NVIDIA GeForce RTX 3070",
+  "manual_candidate_configs": [
+    {
+      "threshold": 0.93,
+      "max_pseudo_labels_per_round": 300,
+      "pseudo_weight": 0.5
+    },
+    {
+      "threshold": 0.95,
+      "max_pseudo_labels_per_round": 500,
+      "pseudo_weight": 0.75
+    },
+    {
+      "threshold": 0.97,
+      "max_pseudo_labels_per_round": 500,
+      "pseudo_weight": 1.0
+    }
+  ],
+  "args": {
+    "data_dir": "./data",
+    "labeled_ratios": [
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5
+    ],
+    "trials": 3,
+    "base_seed": 42,
+    "batch_size": 64,
+    "val_ratio": 0.1,
+    "num_workers": 0,
+    "learning_rate": 0.001,
+    "tuning_ssl_rounds": 1,
+    "tuning_epochs_per_round": 2,
+    "final_ssl_rounds": 2,
+    "final_epochs_per_round": 3,
+    "pso_swarm_size": 2,
+    "pso_iters": 2,
+    "pso_w": 0.7,
+    "pso_c1": 1.5,
+    "pso_c2": 1.5,
+    "max_manual_candidates": 3,
+    "output_root": "study_outputs"
+  }
+}

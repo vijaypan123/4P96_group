@@ -11,7 +11,7 @@ from ssl_pipeline import run_pseudo_labeling_ssl
 class Particle:
     """
     A particle for PSO-based hyperparameter optimization.
-    position = [threshold, max_pseudo_labels_per_round, pseudo_weight]
+    position = [threshold, max_pseudo_labels_per_round, pseudo_weight, learning_rate]
     velocity = same dimension as position
     """
     position: List[float]
@@ -63,6 +63,7 @@ class PSOOptimizer:
         self.threshold_bounds = (0.90, 0.99)
         self.max_pseudo_bounds = (200, 1500)
         self.pseudo_weight_bounds = (0.2, 1.0)
+        self.learning_rate_bounds = (0.0003, 0.0020)
 
         self.swarm: List[Particle] = []
         self.global_best_position = None
@@ -74,13 +75,15 @@ class PSOOptimizer:
         threshold = random.uniform(*self.threshold_bounds)
         max_pseudo = random.uniform(*self.max_pseudo_bounds)
         pseudo_weight = random.uniform(*self.pseudo_weight_bounds)
+        learning_rate = random.uniform(*self.learning_rate_bounds)
 
-        position = [threshold, max_pseudo, pseudo_weight]
+        position = [threshold, max_pseudo, pseudo_weight, learning_rate]
 
         velocity = [
             random.uniform(-0.02, 0.02),   # threshold velocity
             random.uniform(-100, 100),     # pseudo-count velocity
-            random.uniform(-0.1, 0.1)      # pseudo-weight velocity
+            random.uniform(-0.1, 0.1),     # pseudo-weight velocity
+            random.uniform(-0.0003, 0.0003)  # learning-rate velocity
         ]
 
         return Particle(
@@ -94,28 +97,32 @@ class PSOOptimizer:
         threshold = min(max(position[0], self.threshold_bounds[0]), self.threshold_bounds[1])
         max_pseudo = min(max(position[1], self.max_pseudo_bounds[0]), self.max_pseudo_bounds[1])
         pseudo_weight = min(max(position[2], self.pseudo_weight_bounds[0]), self.pseudo_weight_bounds[1])
-        return [threshold, max_pseudo, pseudo_weight]
+        learning_rate = min(max(position[3], self.learning_rate_bounds[0]), self.learning_rate_bounds[1])
+        return [threshold, max_pseudo, pseudo_weight, learning_rate]
 
-    def decode_position(self, position: List[float]) -> Tuple[float, int, float]:
+    def decode_position(self, position: List[float]) -> Tuple[float, int, float, float]:
         threshold = float(position[0])
         max_pseudo = int(round(position[1]))
         pseudo_weight = float(position[2])
-        return threshold, max_pseudo, pseudo_weight
+        learning_rate = float(position[3])
+        return threshold, max_pseudo, pseudo_weight, learning_rate
 
     def evaluate_fitness(self, position: List[float]) -> float:
-        threshold, max_pseudo, pseudo_weight = self.decode_position(position)
+        threshold, max_pseudo, pseudo_weight, learning_rate = self.decode_position(position)
 
         if self.verbose:
             print("\nEvaluating particle with:")
             print(f"  threshold     = {threshold:.4f}")
             print(f"  max_pseudo    = {max_pseudo}")
             print(f"  pseudo_weight = {pseudo_weight:.4f}")
+            print(f"  learning_rate = {learning_rate:.5f}")
 
         ssl_run_kwargs = dict(self.ssl_kwargs)
         ssl_run_kwargs.update({
             "threshold": threshold,
             "max_pseudo_labels_per_round": max_pseudo,
-            "pseudo_weight": pseudo_weight
+            "pseudo_weight": pseudo_weight,
+            "learning_rate": learning_rate
         })
 
         results = run_pseudo_labeling_ssl(**ssl_run_kwargs)
@@ -163,7 +170,7 @@ class PSOOptimizer:
                 new_velocity = []
                 new_position = []
 
-                for d in range(3):
+                for d in range(4):
                     r1 = random.random()
                     r2 = random.random()
 
@@ -198,12 +205,13 @@ class PSOOptimizer:
 
             self.history.append(self.global_best_fitness)
 
-        best_threshold, best_max_pseudo, best_pseudo_weight = self.decode_position(self.global_best_position)
+        best_threshold, best_max_pseudo, best_pseudo_weight, best_learning_rate = self.decode_position(self.global_best_position)
 
         return {
             "best_threshold": best_threshold,
             "best_max_pseudo": best_max_pseudo,
             "best_pseudo_weight": best_pseudo_weight,
+            "best_learning_rate": best_learning_rate,
             "best_fitness": self.global_best_fitness,
             "history": self.history
         }
@@ -225,5 +233,6 @@ if __name__ == "__main__":
     print(f"Best threshold     : {results['best_threshold']:.4f}")
     print(f"Best max pseudo    : {results['best_max_pseudo']}")
     print(f"Best pseudo weight : {results['best_pseudo_weight']:.4f}")
+    print(f"Best learning rate : {results['best_learning_rate']:.5f}")
     print(f"Best validation acc: {results['best_fitness']:.4f}")
     print(f"Fitness history    : {results['history']}")

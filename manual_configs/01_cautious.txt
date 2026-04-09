@@ -1,0 +1,7 @@
+# Conservative strategy that trusts pseudo-labels very slowly.
+name=Cautious
+description=Very high confidence threshold with limited pseudo-label usage.
+threshold=0.99
+max_pseudo_labels_per_round=200
+pseudo_weight=0.25
+learning_rate=0.0005
