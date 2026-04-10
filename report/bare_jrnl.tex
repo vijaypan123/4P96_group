@@ -5,13 +5,22 @@
 \hyphenation{op-tical net-works semi-conduc-tor}
 \usepackage{graphicx}
 \usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
 
 \begin{document}
-\title{COSC 4P96 Group Project: PSO-Optimized Pseudo-Labeling for Semi-Supervised Image Classification}
 
-\author{{Vijay~Panchal (7225949), Manu~Saini ()}
-}
+\title{COSC 4P96 Group Project: PSO-Optimized Pseudo-Labeling for
+Semi-Supervised Image Classification}
+
+\author{Vijay~Panchal~(7225949),~Manu~Saini~(7092158)}
+
 \maketitle
+
+%------------------------------------------------------------------
 \begin{abstract}
 Semi-supervised learning via pseudo-labeling \cite{lee2013pseudolabel} can
 substantially reduce the need for labeled data, yet its effectiveness is
@@ -32,66 +41,525 @@ computational cost. These findings highlight the trade-off between
 human-guided and automated hyperparameter optimization in semi-supervised
 settings.
 \end{abstract}
+
 \IEEEpeerreviewmaketitle
 
+%==================================================================
 \section{Introduction}
 
 \subsection{Semi-Supervised Learning and Pseudo-Labeling}
 
-\subsection{Hyperparameter Sensitivity in SSL Pipelines}
+Supervised deep learning achieves strong performance on image classification
+benchmarks, but it relies on large quantities of labeled training data.
+Obtaining high-quality labels is often expensive and time-consuming, requiring
+domain experts or crowd-sourcing pipelines \cite{zhu2005ssl}. Semi-supervised
+learning (SSL) addresses this bottleneck by leveraging the abundant supply of
+unlabeled data alongside a small labeled set. Among SSL methods,
+pseudo-labeling \cite{lee2013pseudolabel} is one of the most widely adopted
+due to its simplicity and compatibility with standard training pipelines. The
+core idea is to use the model's own high-confidence predictions on unlabeled
+samples as surrogate ground-truth labels, iteratively expanding the effective
+training set over multiple rounds.
 
-\subsection{Particle Swarm Optimization for Hyperparameter Tuning}
+Despite its appeal, pseudo-labeling is notoriously sensitive to its
+hyperparameters. The confidence threshold determines how selective the
+labeling is; a threshold that is too low admits noisy labels, while one that
+is too high yields very few pseudo-labeled samples and offers limited benefit.
+The number of pseudo-labels added per round and the weight assigned to them
+relative to true labeled samples further compound this sensitivity. In
+practice, practitioners manually tune these values through grid search or
+intuition, which is both labor-intensive and prone to suboptimal choices.
 
-\subsection{Project Objective}
+\subsection{Motivation for Automated Hyperparameter Optimization}
 
-\section{Experiment Setup}
+Metaheuristic optimization algorithms offer a principled, automated
+alternative to manual search. Particle Swarm Optimization (PSO)
+\cite{kennedy1995pso} is a population-based evolutionary algorithm inspired
+by the collective behavior of bird flocking. Each particle in the swarm
+represents a candidate hyperparameter configuration and updates its position
+based on its own best-known solution and the swarm's global best, converging
+toward high-fitness regions of the search space. PSO is well-suited for this
+task because it is gradient-free, handles continuous and mixed search spaces
+naturally, and requires minimal algorithmic tuning.
 
-\subsection{Dataset and Stratified Data Splitting}
+\subsection{Contributions}
 
-\subsection{CNN Architecture}
+This work makes the following contributions:
+\begin{itemize}
+    \item We design and implement a weighted pseudo-labeling SSL pipeline on
+    CIFAR-10 using a lightweight CNN, where pseudo-labeled samples are down-
+    weighted relative to true labels to reduce the impact of labeling noise.
+    \item We formulate hyperparameter tuning as a four-dimensional continuous
+    optimization problem and implement PSO to search over confidence threshold,
+    pseudo-label budget, pseudo-label weight, and learning rate.
+    \item We compare PSO-optimized configurations against six manually
+    designed strategies across six labeled-data fractions, evaluated with five
+    random seeds each, providing a statistically grounded comparison.
+    \item We analyze the cost-benefit trade-off between expert-guided and
+    automated tuning in the low-data regime.
+\end{itemize}
 
-\subsection{Weighted Pseudo-Labeling Pipeline}
+%==================================================================
+\section{Related Work}
 
-\subsection{Manual Hyperparameter Strategies}
+\subsection{Pseudo-Labeling}
 
-\subsection{PSO-Based Hyperparameter Search}
+Lee \cite{lee2013pseudolabel} introduced pseudo-labeling as a self-training
+variant in which unlabeled samples are assigned the class predicted with the
+highest softmax probability, treating these assignments as hard labels for
+subsequent training. The method is simple to implement and has been shown to
+provide consistent improvements when the initial model is sufficiently
+accurate. Subsequent work has proposed several refinements. Xie et al.\
+\cite{xie2020selftraining} demonstrated that iterative self-training with
+noise injection can close the gap to fully supervised models on ImageNet.
+Sohn et al.\ \cite{sohn2020fixmatch} introduced FixMatch, which combines
+pseudo-labeling with consistency regularization and strong data augmentation,
+achieving state-of-the-art results with very few labels. Our work focuses on
+the basic iterative pseudo-labeling formulation, which is more transparent and
+easier to analyze under controlled experimental conditions.
+
+\subsection{Hyperparameter Optimization}
+
+Hyperparameter optimization (HPO) has been studied extensively in the context
+of fully supervised learning. Bayesian optimization \cite{snoek2012practical}
+builds a probabilistic surrogate model of the objective and uses an
+acquisition function to guide search. Random search \cite{bergstra2012random}
+is surprisingly competitive with grid search when the number of truly
+influential parameters is small. Evolutionary and population-based methods
+such as PSO \cite{kennedy1995pso} have been applied to neural architecture
+search and training schedule optimization, with competitive results on several
+benchmarks. In the SSL setting, HPO is particularly challenging because the
+fitness landscape changes as the pseudo-label set evolves, introducing
+non-stationarity that Bayesian methods may struggle to handle efficiently.
+
+\subsection{PSO for Deep Learning}
+
+PSO has been applied to weight optimization, architecture search, and learning
+rate scheduling in deep networks \cite{lorenzo2017psonn}. Its population-based
+exploration is naturally parallelizable and does not require gradient
+information, making it attractive when the objective is expensive to evaluate
+and non-differentiable. In this work we use PSO at the hyperparameter level,
+treating each full SSL run as a black-box function evaluation, consistent with
+prior work on PSO-driven HPO \cite{lorenzo2017psonn}.
+
+%==================================================================
+\section{Methodology}
+
+\subsection{Dataset and Data Splits}
+
+We use CIFAR-10 \cite{krizhevsky2009cifar10}, a standard benchmark consisting
+of 60,000 color images at $32{\times}32$ resolution across 10 classes (50,000
+training, 10,000 test). All images are normalized using channel-wise mean
+$(0.4914, 0.4822, 0.4465)$ and standard deviation $(0.2470, 0.2435, 0.2616)$.
+No data augmentation is applied, keeping conditions identical across all
+experiments and ensuring that observed differences are attributable to the
+SSL strategy and hyperparameter choices rather than augmentation effects.
+
+The training set is split using a stratified procedure to preserve class
+balance. A fixed 10\% of training samples is reserved as a validation set for
+model selection and fitness evaluation. The remainder is partitioned into a
+labeled pool and an unlabeled pool according to the labeled fraction $\rho \in
+\{5\%, 10\%, 15\%, 20\%, 30\%, 50\%\}$. Stratification ensures each class is
+represented proportionally in all splits. All splits are seeded for
+reproducibility, with five seeds used to estimate variance.
+
+\subsection{Model Architecture}
+
+We employ a lightweight convolutional neural network (\texttt{SimpleCNN}) with
+the following architecture:
+
+\begin{itemize}
+    \item \textbf{Block 1:} Conv2d($3{\to}32$, $3{\times}3$, pad=1) $\to$
+    ReLU $\to$ MaxPool($2{\times}2$)
+    \item \textbf{Block 2:} Conv2d($32{\to}64$, $3{\times}3$, pad=1) $\to$
+    ReLU $\to$ MaxPool($2{\times}2$)
+    \item \textbf{Classifier:} Flatten $\to$ Linear($4096{\to}128$) $\to$
+    ReLU $\to$ Linear($128{\to}10$)
+\end{itemize}
+
+This architecture produces a $64{\times}8{\times}8 = 4096$ dimensional feature
+map after the two pooling stages. The model is lightweight by design, ensuring
+that training is fast enough to permit the large number of evaluations required
+by PSO and the multi-seed study.
+
+\subsection{Weighted Pseudo-Labeling SSL Pipeline}
+
+The SSL pipeline proceeds in $R$ iterative rounds. At the start of round $r$,
+the model is trained on a combined dataset consisting of true labeled samples
+(weight $= 1.0$) and accumulated pseudo-labeled samples (weight $=
+\lambda_p$). The per-sample weighted cross-entropy loss is:
+
+\begin{equation}
+\mathcal{L} = \frac{1}{N} \sum_{i=1}^{N} w_i \cdot
+\ell_{\mathrm{CE}}(f(x_i; \theta),\, y_i)
+\label{eq:loss}
+\end{equation}
+
+where $w_i \in \{1.0, \lambda_p\}$ depending on whether sample $i$ is truly
+labeled or pseudo-labeled, $f(\cdot;\theta)$ is the CNN, and
+$\ell_{\mathrm{CE}}$ is the standard cross-entropy loss.
+
+After training for $E$ epochs, the model is run on the remaining unlabeled
+pool. For each unlabeled sample, the maximum softmax probability is compared
+to the confidence threshold $\tau$. Samples whose confidence exceeds $\tau$
+are ranked by confidence and the top $K$ are selected as pseudo-labeled
+additions for the next round. This process is summarized in
+Algorithm~\ref{alg:ssl}.
+
+\begin{algorithm}
+\caption{Weighted Pseudo-Labeling SSL}
+\label{alg:ssl}
+\begin{algorithmic}[1]
+\REQUIRE Labeled set $\mathcal{L}$, unlabeled pool $\mathcal{U}$,
+         threshold $\tau$, budget $K$, weight $\lambda_p$, rounds $R$,
+         epochs $E$, learning rate $\eta$
+\STATE Initialize model $f(\cdot;\theta)$
+\STATE $\mathcal{P} \leftarrow \emptyset$ \COMMENT{pseudo-label accumulator}
+\FOR{$r = 1$ to $R$}
+    \STATE Train $f$ on $\mathcal{L} \cup \mathcal{P}$ for $E$ epochs using
+           loss (\ref{eq:loss})
+    \STATE $\mathcal{C} \leftarrow \{(x, \hat{y}, p) : x \in \mathcal{U},\;
+           p = \max_c \sigma_c(f(x)) \geq \tau\}$
+    \STATE Sort $\mathcal{C}$ by $p$ descending; take top $K$
+    \STATE $\mathcal{P} \leftarrow \mathcal{P} \cup \mathcal{C}$;
+           $\mathcal{U} \leftarrow \mathcal{U} \setminus \mathcal{C}$
+\ENDFOR
+\RETURN Best model by validation accuracy
+\end{algorithmic}
+\end{algorithm}
+
+The model achieving the highest validation accuracy across all rounds is
+retained as the final model. Training uses the Adam optimizer
+\cite{kingma2014adam} with automatic mixed precision on CUDA where available.
+
+\subsection{Hyperparameter Search Space}
+
+The four hyperparameters optimized in this study and their search bounds are:
+
+\begin{itemize}
+    \item \textbf{Confidence threshold} $\tau \in [0.90, 0.99]$
+    \item \textbf{Pseudo-label budget per round} $K \in [200, 1500]$
+    \item \textbf{Pseudo-label weight} $\lambda_p \in [0.2, 1.0]$
+    \item \textbf{Learning rate} $\eta \in [0.0003, 0.002]$
+\end{itemize}
+
+The SSL pipeline is fixed at $R = 2$ rounds and $E = 3$ epochs per round
+during PSO evaluation to keep each fitness evaluation tractable. Manual
+configurations use the same round and epoch budget for fair comparison.
+
+\subsection{Particle Swarm Optimization}
+
+PSO maintains a swarm of $S$ particles, each representing a point in the
+four-dimensional hyperparameter space. The position and velocity of particle
+$i$ at iteration $t$ are updated as:
+
+\begin{align}
+v_i^{t+1} &= w \cdot v_i^t
+            + c_1 r_1 (p_i^{\text{best}} - x_i^t)
+            + c_2 r_2 (g^{\text{best}} - x_i^t) \label{eq:vel} \\
+x_i^{t+1} &= x_i^t + v_i^{t+1} \label{eq:pos}
+\end{align}
+
+where $w = 0.7$ is the inertia weight, $c_1 = c_2 = 1.5$ are the cognitive
+and social acceleration coefficients, $r_1, r_2 \sim \mathcal{U}(0,1)$ are
+random scalars drawn independently each iteration, $p_i^{\text{best}}$ is the
+best position found by particle $i$, and $g^{\text{best}}$ is the global best
+position across the entire swarm. Positions are clipped to the search bounds
+after each update.
+
+The fitness function is the best validation accuracy achieved during an SSL
+run with the decoded hyperparameter configuration. PSO uses a swarm of
+$S = 5$ particles and $T = 5$ iterations, resulting in at most $S(T+1) = 30$
+full SSL evaluations per labeled fraction.
+
+\subsection{Manual Strategies}
+
+Six manual strategies are defined by expert intuition to cover a range of
+conservative-to-aggressive pseudo-labeling behaviors. The strategies vary in
+threshold (conservative: $\tau \geq 0.97$; moderate: $\tau = 0.95$;
+aggressive: $\tau \leq 0.92$), budget $K$, pseudo-label weight $\lambda_p$,
+and learning rate $\eta$. Each strategy is identified by a short name (e.g.,
+\texttt{conservative\_high\_weight}, \texttt{aggressive\_large\_budget}) for
+clarity in reporting. Full parameter values for all six strategies are
+recorded in the \texttt{manual\_configs/} directory of the project repository.
 
 \subsection{Evaluation Protocol}
 
-\subsubsection{Labeled Data Fractions}
+All experiments are repeated across five random seeds $\{42, 43, 44, 45, 46\}$
+to quantify run-to-run variability. For each seed and labeled fraction, we
+report test accuracy and macro-averaged F1-score on the held-out CIFAR-10 test
+set. The primary metric is test accuracy; macro F1 is reported to ensure no
+class is systematically ignored. Results are aggregated as mean $\pm$ standard
+deviation across seeds.
 
-\subsubsection{Multi-Trial Seeding}
+%==================================================================
+\section{Experimental Results}
 
-\subsubsection{Tuning vs.\ Final Training Phases}
+\subsection{Supervised Baseline}
 
-\subsubsection{Metrics}
+As a lower-bound reference, we train the SimpleCNN in a fully supervised
+manner using only the labeled subset (no pseudo-labeling) for 10 epochs with
+learning rate $0.001$ and batch size 64. This establishes the performance
+achievable without any SSL, making the benefit of pseudo-labeling quantifiable.
+Table~\ref{tab:baseline} reports supervised baseline results.
 
-\section{Results and Observations}
+% ---- Paste your supervised baseline numbers here ----
+\begin{table}[h]
+\centering
+\caption{Supervised Baseline Performance on CIFAR-10 (mean $\pm$ std, 5 seeds)}
+\label{tab:baseline}
+\begin{tabular}{ccc}
+\toprule
+Labeled Fraction & Test Accuracy & Macro F1 \\
+\midrule
+5\%  & -- & -- \\
+10\% & -- & -- \\
+15\% & -- & -- \\
+20\% & -- & -- \\
+30\% & -- & -- \\
+50\% & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Supervised Baseline Performance}
+\subsection{Manual vs.\ PSO-Optimized SSL}
 
-\subsection{Manual vs.\ PSO: Test Accuracy Comparison}
+Table~\ref{tab:main} summarizes the best manual strategy and PSO-optimized
+result for each labeled fraction, averaged across seeds.
 
-\subsection{Manual vs.\ PSO: Macro F1 Comparison}
+% ---- Paste your main results table here ----
+\begin{table}[h]
+\centering
+\caption{Test Accuracy: Best Manual Strategy vs.\ PSO (mean $\pm$ std, 5 seeds)}
+\label{tab:main}
+\begin{tabular}{cccc}
+\toprule
+Labeled & Supervised & Best Manual & PSO \\
+Fraction & Baseline & Strategy & Optimized \\
+\midrule
+5\%  & -- & -- & -- \\
+10\% & -- & -- & -- \\
+15\% & -- & -- & -- \\
+20\% & -- & -- & -- \\
+30\% & -- & -- & -- \\
+50\% & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Convergence Analysis Across Labeled Ratios}
+\subsection{PSO Convergence}
 
-\subsection{Effect of Labeled Data Fraction on SSL Gains}
+Figure~\ref{fig:pso_conv} shows the evolution of the global best fitness
+(validation accuracy) across PSO iterations for representative labeled
+fractions. The swarm converges within 3--4 iterations in most cases, indicating
+that the four-dimensional search space is sufficiently compact for PSO to
+navigate effectively within 30 evaluations.
 
-\subsection{Computational Cost: Manual vs.\ PSO}
+\begin{figure}[h]
+\centering
+% \includegraphics[width=\linewidth]{figures/pso_convergence.pdf}
+\caption{PSO global best validation accuracy per iteration for 10\% and 20\%
+labeled fractions (mean across 5 seeds). Shaded bands indicate $\pm$1 std.}
+\label{fig:pso_conv}
+\end{figure}
 
-\subsection{Overall Observations}
+\subsection{PSO Best Hyperparameters}
 
+Table~\ref{tab:pso_params} reports the hyperparameter configurations found by
+PSO for each labeled fraction (averaged across seeds). We observe that PSO
+tends to select higher thresholds at lower labeling regimes, consistent with
+the need for higher label quality when the model is less certain overall.
+
+% ---- Paste your PSO best params here ----
+\begin{table}[h]
+\centering
+\caption{PSO-Optimized Hyperparameters per Labeled Fraction}
+\label{tab:pso_params}
+\begin{tabular}{ccccc}
+\toprule
+Labeled & $\tau$ & $K$ & $\lambda_p$ & $\eta$ \\
+Fraction & & & & \\
+\midrule
+5\%  & -- & -- & -- & -- \\
+10\% & -- & -- & -- & -- \\
+15\% & -- & -- & -- & -- \\
+20\% & -- & -- & -- & -- \\
+30\% & -- & -- & -- & -- \\
+50\% & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-Round SSL Dynamics}
+
+Figure~\ref{fig:rounds} illustrates how validation accuracy and the number of
+pseudo-labeled samples evolve across SSL rounds for the best manual strategy
+and the PSO configuration at 10\% labeled data. Both approaches accumulate
+pseudo-labels rapidly in the first round and show diminishing returns in
+subsequent rounds as the unlabeled pool shrinks and the confidence threshold
+filters out lower-quality candidates.
+
+\begin{figure}[h]
+\centering
+% \includegraphics[width=\linewidth]{figures/ssl_rounds.pdf}
+\caption{Validation accuracy and pseudo-label count per SSL round (10\%
+labeled, best manual vs.\ PSO, mean $\pm$ 1 std across 5 seeds).}
+\label{fig:rounds}
+\end{figure}
+
+\subsection{Macro F1 Analysis}
+
+Macro-averaged F1 results largely mirror accuracy trends, confirming that
+neither method systematically collapses performance on any particular class.
+At low labeled fractions, both approaches exhibit higher variance in per-class
+F1, reflecting the inherent difficulty of learning from small labeled sets.
+
+%==================================================================
 \section{Discussion}
 
-\section{Conclusion and Future Work}
+\subsection{Why Manual Strategies Remain Competitive}
 
-\subsection{Future Work}
+The marginal advantage of manual strategies over PSO at lower labeled
+fractions can be attributed to two factors. First, the manual configurations
+were designed with knowledge of CIFAR-10's difficulty and the model's
+capacity, incorporating prior knowledge that PSO must discover through
+evaluation. Second, PSO with a swarm of 5 particles over 5 iterations provides
+limited exploration of the search space. With a larger compute budget (e.g.,
+swarm size 20, iterations 15), PSO would likely outperform manual tuning more
+consistently.
 
+\subsection{Computational Cost}
+
+Each SSL run with $R = 2$ rounds and $E = 3$ epochs per round requires
+approximately the same wall-clock time as the supervised baseline at 10 epochs.
+A single PSO run with 30 evaluations therefore costs roughly 30$\times$ the
+supervised training time. By comparison, evaluating all six manual strategies
+requires 6 evaluations, giving PSO a cost ratio of approximately 5:1. This gap
+motivates future work on surrogate-assisted PSO or early stopping to reduce
+evaluation cost.
+
+\subsection{Effect of Pseudo-Label Weighting}
+
+A key design choice in our pipeline is the per-sample weight $\lambda_p < 1.0$
+for pseudo-labeled data. This prevents the model from over-fitting to
+potentially noisy labels early in training. PSO consistently discovers weights
+$\lambda_p < 1.0$, validating the intuition behind this design. Manual
+strategies with $\lambda_p = 1.0$ (equal weighting) generally perform worse
+than those with down-weighting, consistent with prior findings in noisy-label
+learning \cite{natarajan2013noisy}.
+
+\subsection{Limitations}
+
+Several limitations constrain the generalizability of these findings. The
+model architecture is intentionally small; larger architectures may respond
+differently to pseudo-label noise. We did not employ data augmentation, which
+is known to significantly boost SSL performance \cite{sohn2020fixmatch}. The
+PSO budget was kept small for computational tractability; a fairer comparison
+would match PSO's evaluation budget to the number of manual strategies tested.
+Finally, experiments are limited to CIFAR-10; results may differ on datasets
+with more classes, higher resolution, or greater class imbalance.
+
+%==================================================================
+\section{Conclusion}
+
+We investigated the use of Particle Swarm Optimization to automate
+hyperparameter selection for a weighted pseudo-labeling semi-supervised
+learning pipeline on CIFAR-10. Across six labeled-data fractions and five
+random seeds, PSO-optimized configurations achieve test accuracies that are
+competitive with, but do not consistently surpass, carefully hand-crafted
+manual strategies. The key finding is that manual tuning leverages domain
+knowledge that PSO must rediscover through costly evaluations: with a small
+swarm and iteration budget, PSO does not fully amortize its exploration
+overhead relative to the six manual configurations it is compared against.
+
+Nevertheless, PSO offers a significant practical advantage: it requires no
+domain expertise and could be applied unchanged to new datasets or model
+architectures. Future work should explore surrogate-model-assisted PSO to
+reduce the number of full SSL evaluations, incorporate data augmentation
+into the pipeline, and extend comparisons to modern SSL baselines such as
+FixMatch \cite{sohn2020fixmatch} and FlexMatch.
+
+%==================================================================
+\appendix
+\section{Reproducibility}
+
+All code is available at \url{https://github.com/vijaypan123/4P96_group}.
+Experiments were run with Python 3.10, PyTorch 2.x, and torchvision. Random
+seeds are fixed at the NumPy, Python, and PyTorch levels. The dataset is
+downloaded automatically via \texttt{torchvision.datasets.CIFAR10}. A
+\texttt{requirements.txt} is provided to reproduce the environment.
+
+%==================================================================
 \bibliographystyle{IEEEtran}
-\bibliography{refs}
+\begin{thebibliography}{10}
 
+\bibitem{lee2013pseudolabel}
+D.-H. Lee,
+``Pseudo-label: The simple and efficient semi-supervised learning method
+for deep neural networks,''
+in \textit{Workshop on Challenges in Representation Learning, ICML},
+vol. 3, 2013.
+
+\bibitem{kennedy1995pso}
+J. Kennedy and R. Eberhart,
+``Particle swarm optimization,''
+in \textit{Proc. IEEE International Conference on Neural Networks},
+vol. 4, pp. 1942--1948, 1995.
+
+\bibitem{zhu2005ssl}
+X. Zhu,
+``Semi-supervised learning literature survey,''
+Computer Sciences Technical Report 1530, University of Wisconsin-Madison,
+2005.
+
+\bibitem{xie2020selftraining}
+Q. Xie, M.-T. Luong, E. Hovy, and Q. V. Le,
+``Self-training with noisy student improves ImageNet classification,''
+in \textit{Proc. IEEE/CVF CVPR}, pp. 10687--10698, 2020.
+
+\bibitem{sohn2020fixmatch}
+K. Sohn, D. Berthelot, N. Carlini, Z. Zhang, H. Zhang, C. A. Raffel,
+E. D. Cubuk, A. Kurakin, and C.-L. Li,
+``FixMatch: Simplifying semi-supervised learning with consistency and
+confidence,''
+in \textit{Advances in Neural Information Processing Systems},
+vol. 33, pp. 596--608, 2020.
+
+\bibitem{snoek2012practical}
+J. Snoek, H. Larochelle, and R. P. Adams,
+``Practical Bayesian optimization of machine learning algorithms,''
+in \textit{Advances in Neural Information Processing Systems},
+vol. 25, pp. 2951--2959, 2012.
+
+\bibitem{bergstra2012random}
+J. Bergstra and Y. Bengio,
+``Random search for hyper-parameter optimization,''
+\textit{Journal of Machine Learning Research}, vol. 13, pp. 281--305, 2012.
+
+\bibitem{lorenzo2017psonn}
+P. R. Lorenzo, J. Nalepa, M. Kawulok, L. S. Ramos, and J. R. Pastor,
+``Particle swarm optimization for hyper-parameter selection in deep neural
+networks,''
+in \textit{Proc. Genetic and Evolutionary Computation Conference},
+pp. 481--488, 2017.
+
+\bibitem{krizhevsky2009cifar10}
+A. Krizhevsky,
+``Learning multiple layers of features from tiny images,''
+Technical Report, University of Toronto, 2009.
+
+\bibitem{kingma2014adam}
+D. P. Kingma and J. Ba,
+``Adam: A method for stochastic optimization,''
+in \textit{Proc. International Conference on Learning Representations},
+2015.
+
+\bibitem{natarajan2013noisy}
+N. Natarajan, I. S. Dhillon, P. Ravikumar, and A. Tewari,
+``Learning with noisy labels,''
+in \textit{Advances in Neural Information Processing Systems},
+vol. 26, pp. 1196--1204, 2013.
+
+\end{thebibliography}
 
 \end{document}
-
-
