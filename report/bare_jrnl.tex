@@ -294,72 +294,59 @@ deviation across seeds.
 
 \section{Experimental Results}
 
-\subsection{Supervised Baseline}
-
-As a lower-bound reference, we train the SimpleCNN in a fully supervised
-manner using only the labeled subset (no pseudo-labeling) for 10 epochs with
-learning rate $0.001$ and batch size 64. This establishes the performance
-achievable without any SSL, making the benefit of pseudo-labeling quantifiable.
-Table~\ref{tab:baseline} reports supervised baseline results.
-
-
-\begin{table}[h]
-\centering
-\caption{Supervised Baseline Performance on CIFAR-10 (mean $\pm$ std, 5 seeds)}
-\label{tab:baseline}
-\begin{tabular}{ccc}
-\toprule
-Labeled Fraction & Test Accuracy & Macro F1 \\
-\midrule
-5\%  & -- & -- \\
-10\% & -- & -- \\
-15\% & -- & -- \\
-20\% & -- & -- \\
-30\% & -- & -- \\
-50\% & -- & -- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
 \subsection{Manual vs.\ PSO-Optimized SSL}
 
 Table~\ref{tab:main} summarizes the best manual strategy and PSO-optimized
 result for each labeled fraction, averaged across seeds.
 
-
 \begin{table}[h]
 \centering
 \caption{Test Accuracy: Best Manual Strategy vs.\ PSO (mean $\pm$ std, 5 seeds)}
 \label{tab:main}
-\begin{tabular}{cccc}
+\begin{tabular}{ccc}
 \toprule
-Labeled & Supervised & Best Manual & PSO \\
-Fraction & Baseline & Strategy & Optimized \\
+Labeled Fraction & Best Manual Strategy & PSO Optimized \\
 \midrule
-5\%  & -- & -- & -- \\
-10\% & -- & -- & -- \\
-15\% & -- & -- & -- \\
-20\% & -- & -- & -- \\
-30\% & -- & -- & -- \\
-50\% & -- & -- & -- \\
+5\%  & $0.5048 \pm 0.0075$ & $0.4899 \pm 0.0065$ \\
+10\% & $0.5580 \pm 0.0033$ & $0.5491 \pm 0.0055$ \\
+15\% & $0.5828 \pm 0.0044$ & $0.5817 \pm 0.0111$ \\
+20\% & $0.6092 \pm 0.0066$ & $0.6001 \pm 0.0107$ \\
+30\% & $0.6419 \pm 0.0106$ & $0.6371 \pm 0.0067$ \\
+50\% & $0.6725 \pm 0.0043$ & $0.6704 \pm 0.0052$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\linewidth]{figures/study_report_overview.png}
+\caption{Overview of manual vs.\ PSO test accuracy across all labeled
+fractions, with summary statistics.}
+\label{fig:overview}
+\end{figure}
+
 \subsection{PSO Convergence}
 
-Figure~\ref{fig:pso_conv} shows the evolution of the global best fitness
-(validation accuracy) across PSO iterations for representative labeled
-fractions. The swarm converges within 3--4 iterations in most cases, indicating
-that the four-dimensional search space is sufficiently compact for PSO to
-navigate effectively within 30 evaluations.
+Figures~\ref{fig:conv_10} and~\ref{fig:conv_20} show the convergence of
+validation accuracy across global training epochs at 10\% and 20\% labeled
+data respectively. Both methods improve rapidly in early epochs and plateau
+after a few SSL rounds, with manual strategies maintaining a slight edge
+throughout training.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
+\includegraphics[width=\linewidth]{figures/study_report_ratio_10.png}
+\caption{Convergence of validation accuracy at 10\% labeled data: manual vs.\
+PSO across global training epochs (mean across 5 seeds).}
+\label{fig:conv_10}
+\end{figure}
 
-\caption{PSO global best validation accuracy per iteration for 10\% and 20\%
-labeled fractions (mean across 5 seeds). Shaded bands indicate $\pm$1 std.}
-\label{fig:pso_conv}
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\linewidth]{figures/study_report_ratio_20.png}
+\caption{Convergence of validation accuracy at 20\% labeled data: manual vs.\
+PSO across global training epochs (mean across 5 seeds).}
+\label{fig:conv_20}
 \end{figure}
 
 \subsection{PSO Best Hyperparameters}
@@ -369,41 +356,46 @@ PSO for each labeled fraction (averaged across seeds). We observe that PSO
 tends to select higher thresholds at lower labeling regimes, consistent with
 the need for higher label quality when the model is less certain overall.
 
-% Paste your PSO best params here
 \begin{table}[h]
 \centering
-\caption{PSO-Optimized Hyperparameters per Labeled Fraction}
+\caption{PSO-Optimized Hyperparameters per Labeled Fraction (mean across 5 seeds)}
 \label{tab:pso_params}
 \begin{tabular}{ccccc}
 \toprule
 Labeled & $\tau$ & $K$ & $\lambda_p$ & $\eta$ \\
 Fraction & & & & \\
 \midrule
-5\%  & -- & -- & -- & -- \\
-10\% & -- & -- & -- & -- \\
-15\% & -- & -- & -- & -- \\
-20\% & -- & -- & -- & -- \\
-30\% & -- & -- & -- & -- \\
-50\% & -- & -- & -- & -- \\
+5\%  & 0.9443 & 1053 & 0.6645 & 0.001188 \\
+10\% & 0.9324 & 762  & 0.3869 & 0.001527 \\
+15\% & 0.9195 & 995  & 0.4761 & 0.001167 \\
+20\% & 0.9363 & 899  & 0.5347 & 0.001598 \\
+30\% & 0.9380 & 481  & 0.5529 & 0.000992 \\
+50\% & 0.9381 & 673  & 0.5783 & 0.000985 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Per-Round SSL Dynamics}
 
-Figure~\ref{fig:rounds} illustrates how validation accuracy and the number of
-pseudo-labeled samples evolve across SSL rounds for the best manual strategy
-and the PSO configuration at 10\% labeled data. Both approaches accumulate
-pseudo-labels rapidly in the first round and show diminishing returns in
-subsequent rounds as the unlabeled pool shrinks and the confidence threshold
-filters out lower-quality candidates.
+Figures~\ref{fig:conv_5} and~\ref{fig:conv_30} show convergence at 5\% and
+30\% labeled data. At 5\%, the data-scarce regime exhibits the highest
+variance and slowest convergence, while at 30\% both methods improve
+steadily and the gap between manual and PSO narrows considerably.
 
-\begin{figure}[h]
+\begin{figure}[ht]
 \centering
-% \includegraphics[width=\linewidth]{figures/ssl_rounds.pdf}
-\caption{Validation accuracy and pseudo-label count per SSL round (10\%
-labeled, best manual vs.\ PSO, mean $\pm$ 1 std across 5 seeds).}
-\label{fig:rounds}
+\includegraphics[width=\linewidth]{figures/study_report_ratio_5.png}
+\caption{Convergence at 5\% labeled data---the most data-scarce regime.
+Both methods show high variance and slow improvement per epoch.}
+\label{fig:conv_5}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\linewidth]{figures/study_report_ratio_30.png}
+\caption{Convergence at 30\% labeled data. The gap between manual and PSO
+narrows as more labeled data is available.}
+\label{fig:conv_30}
 \end{figure}
 
 \subsection{Macro F1 Analysis}
@@ -412,6 +404,14 @@ Macro-averaged F1 results largely mirror accuracy trends, confirming that
 neither method systematically collapses performance on any particular class.
 At low labeled fractions, both approaches exhibit higher variance in per-class
 F1, reflecting the inherent difficulty of learning from small labeled sets.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\linewidth]{figures/study_report_ratio_50.png}
+\caption{Convergence at 50\% labeled data---the most data-rich regime.
+Both methods converge quickly and achieve similar final accuracy.}
+\label{fig:conv_50}
+\end{figure}
 
 
 \section{Discussion}
